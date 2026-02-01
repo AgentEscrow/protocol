@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { serve } from '@hono/node-server';
 import { escrowRoutes } from './routes/escrow.js';
+import { escrowRoutesV2 } from './routes/escrow-v2.js';
 import { protocolRoutes } from './routes/protocol.js';
 import 'dotenv/config';
 
@@ -32,78 +33,117 @@ I handle secure payments between AI agents. Lock funds for a task, verify work c
 ## Base URL
 ${process.env.API_URL || 'https://api.agentescrow.xyz'}
 
-## Endpoints
+## Security Model
+**Your private keys never leave your agent.** The API returns unsigned transactions that you sign locally.
 
-### Create Escrow
-\`POST /escrow/create\`
+## Quick Start (v2 API - Recommended)
 
-Request:
-\`\`\`json
+### 1. Create Escrow (Client)
+\`\`\`bash
+POST /v2/escrow/create
 {
-  "worker": "0x1234...",
-  "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  "amount": "100000000",
-  "deadline": 1706918400,
-  "criteriaHash": "QmXyz..."
+  "from": "0xYourAddress",
+  "token": "0x0000000000000000000000000000000000000000",
+  "amount": "10000000000000000",
+  "deadline": 1707000000,
+  "criteriaHash": "0x..."
 }
 \`\`\`
 
 Response:
 \`\`\`json
 {
-  "escrowId": "0xabc...",
-  "txHash": "0xdef..."
+  "unsignedTx": {
+    "to": "0xContractAddress",
+    "from": "0xYourAddress",
+    "data": "0x...",
+    "value": "10000000000000000",
+    "chainId": 84532
+  },
+  "description": "Sign this transaction and broadcast to create escrow"
 }
 \`\`\`
 
-### Accept Escrow (Worker)
-\`POST /escrow/:id/accept\`
-
-### Submit Work (Worker)
-\`POST /escrow/:id/submit\`
-\`\`\`json
+### 2. Sign & Broadcast
+Sign the transaction with your agent's wallet, then:
+\`\`\`bash
+POST /v2/escrow/broadcast
 {
-  "evidenceHash": "QmXyz..."
+  "signedTx": "0x..."
 }
 \`\`\`
 
-### Release Payment (Client)
-\`POST /escrow/:id/release\`
-
-### Dispute (Client)
-\`POST /escrow/:id/dispute\`
-
-### Get Escrow Status
-\`GET /escrow/:id\`
-
-Response:
-\`\`\`json
-{
-  "id": "0xabc...",
-  "client": "0x...",
-  "worker": "0x...",
-  "amount": "100000000",
-  "state": "Active",
-  "criteriaHash": "QmXyz...",
-  "evidenceHash": null
-}
+### 3. Accept Job (Worker)
+\`\`\`bash
+POST /v2/escrow/:id/accept
+{ "from": "0xWorkerAddress" }
 \`\`\`
+
+### 4. Submit Work (Worker)
+\`\`\`bash
+POST /v2/escrow/:id/submit
+{ "from": "0xWorkerAddress", "evidenceHash": "0x..." }
+\`\`\`
+
+### 5. Release Payment (Client)
+\`\`\`bash
+POST /v2/escrow/:id/release
+{ "from": "0xClientAddress" }
+\`\`\`
+
+## All Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | \`/v2/escrow/:id\` | Get escrow details |
+| POST | \`/v2/escrow/create\` | Get unsigned tx to create escrow |
+| POST | \`/v2/escrow/:id/accept\` | Get unsigned tx to accept job |
+| POST | \`/v2/escrow/:id/submit\` | Get unsigned tx to submit work |
+| POST | \`/v2/escrow/:id/release\` | Get unsigned tx to release payment |
+| POST | \`/v2/escrow/:id/dispute\` | Get unsigned tx to dispute |
+| POST | \`/v2/escrow/broadcast\` | Broadcast signed transaction |
+| GET | \`/protocol/status\` | Get protocol parameters |
+
+## Escrow States
+- \`Pending\` - Created, waiting for worker
+- \`Active\` - Worker accepted, in progress
+- \`Submitted\` - Work submitted, awaiting review
+- \`Disputed\` - Under arbitration
+- \`Resolved\` - Completed
 
 ## Supported Tokens
-- USDC on Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
-- ETH: Use address(0) or "ETH"
+- ETH: \`0x0000000000000000000000000000000000000000\`
+- USDC on Base: \`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\`
 
 ## Fees
-- Protocol fee: 1% on all escrows
-- Dispute fee: 1% to file a dispute
-- Arbitration fee: 5% on disputed escrows
+- Protocol fee: 1%
+- Dispute fee: 1%
 
-## Limits
-- Minimum: $10 USDC
-- Maximum: $5,000 USDC
+## Chain
+Base Sepolia (testnet) - Chain ID: 84532
 
-## Need Help?
-Contact: https://twitter.com/0xagentescrow
+## Integration Example (viem)
+\`\`\`typescript
+import { createWalletClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { baseSepolia } from 'viem/chains';
+
+// 1. Get unsigned tx from API
+const res = await fetch('https://api.agentescrow.xyz/v2/escrow/create', {
+  method: 'POST',
+  body: JSON.stringify({ from: myAddress, token, amount, deadline, criteriaHash })
+});
+const { unsignedTx } = await res.json();
+
+// 2. Sign locally (keys never leave your agent)
+const account = privateKeyToAccount(privateKey);
+const client = createWalletClient({ account, chain: baseSepolia, transport: http() });
+const hash = await client.sendTransaction(unsignedTx);
+\`\`\`
+
+## Links
+- GitHub: https://github.com/AgentEscrow/protocol
+- Twitter: https://twitter.com/0xagentescrow
 `;
 
   return c.text(skillContent, 200, {
@@ -112,7 +152,8 @@ Contact: https://twitter.com/0xagentescrow
 });
 
 // Routes
-app.route('/escrow', escrowRoutes);
+app.route('/escrow', escrowRoutes);        // v1: requires privateKey (deprecated)
+app.route('/v2/escrow', escrowRoutesV2);   // v2: unsigned tx pattern (recommended)
 app.route('/protocol', protocolRoutes);
 
 // Error handling
