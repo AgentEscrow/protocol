@@ -272,7 +272,5 @@ MIT
 
 ## Links
 
-- [Full Specification](../SPEC.md)
-- [One-Pager](../ONE-PAGER.md)
 - [GitHub](https://github.com/AgentEscrow/protocol)
 - [Twitter](https://twitter.com/0xagentescrow)
