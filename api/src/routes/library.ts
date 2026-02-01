@@ -186,6 +186,7 @@ libraryRoutes.get('/search', async (c) => {
 
 /**
  * Browse public deliverables with filters
+ * Queries BOTH library_items (direct publishes) AND tasks (escrow-based)
  */
 libraryRoutes.get('/', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
@@ -196,57 +197,107 @@ libraryRoutes.get('/', async (c) => {
   const sort = c.req.query('sort') || 'recent';
 
   const db = getDb();
+  const allItems: any[] = [];
 
-  const conditions: string[] = ['is_public = 1'];
-  const params: any[] = [];
+  // Query direct library items
+  {
+    const conditions: string[] = [];
+    const params: any[] = [];
 
-  if (category) {
-    conditions.push('category = ?');
-    params.push(category);
+    if (category) {
+      conditions.push('category = ?');
+      params.push(category);
+    }
+    if (skills) {
+      conditions.push('skills LIKE ?');
+      params.push(`%${skills}%`);
+    }
+    if (license) {
+      conditions.push('license = ?');
+      params.push(license);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const libItems = db.prepare(`
+      SELECT
+        id,
+        'direct' as source,
+        title,
+        description,
+        category,
+        skills,
+        license,
+        deliverable_inline as deliverable,
+        contributor,
+        access_count as accessCount,
+        citation_count as citationCount,
+        created_at as createdAt
+      FROM library_items
+      ${where}
+    `).all(...params);
+
+    allItems.push(...libItems);
   }
-  if (skills) {
-    conditions.push('skills LIKE ?');
-    params.push(`%${skills}%`);
-  }
-  if (license) {
-    conditions.push('license = ?');
-    params.push(license);
+
+  // Query escrow-based items
+  {
+    const conditions: string[] = ['is_public = 1'];
+    const params: any[] = [];
+
+    if (category) {
+      conditions.push('category = ?');
+      params.push(category);
+    }
+    if (skills) {
+      conditions.push('skills LIKE ?');
+      params.push(`%${skills}%`);
+    }
+    if (license) {
+      conditions.push('license = ?');
+      params.push(license);
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
+
+    const taskItems = db.prepare(`
+      SELECT
+        escrow_id as id,
+        'escrow' as source,
+        title,
+        description,
+        category,
+        skills,
+        license,
+        deliverable_summary as deliverable,
+        worker as contributor,
+        access_count as accessCount,
+        0 as citationCount,
+        made_public_at as createdAt
+      FROM tasks
+      ${where}
+    `).all(...params);
+
+    allItems.push(...taskItems);
   }
 
-  const where = `WHERE ${conditions.join(' AND ')}`;
-
-  let orderBy: string;
+  // Sort
   switch (sort) {
     case 'popular':
-      orderBy = 'access_count DESC';
-      break;
-    case 'amount':
-      orderBy = 'amount DESC';
+      allItems.sort((a, b) => (b.accessCount || 0) - (a.accessCount || 0));
       break;
     case 'recent':
     default:
-      orderBy = 'made_public_at DESC';
+      allItems.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }
 
-  const items = db.prepare(`
-    SELECT 
-      escrow_id as escrowId, title, description, category, skills,
-      amount, token, license, deliverable_summary as deliverableSummary,
-      evidence_hash as evidenceHash, client, worker, completed_at as completedAt,
-      made_public_at as madePublicAt, access_count as accessCount
-    FROM tasks
-    ${where}
-    ORDER BY ${orderBy}
-    LIMIT ? OFFSET ?
-  `).all(...params, limit, offset);
-
-  const countResult = db.prepare(`
-    SELECT COUNT(*) as total FROM tasks ${where}
-  `).get(...params) as { total: number };
+  // Paginate
+  const total = allItems.length;
+  const paginatedItems = allItems.slice(offset, offset + limit);
 
   return c.json({
-    items: items.map(formatLibraryItem),
-    total: countResult.total,
+    items: paginatedItems.map(formatBrowseResult),
+    total,
     limit,
     offset
   });
@@ -632,6 +683,23 @@ function formatSearchResult(item: any) {
     citationCount: item.citationCount || 0,
     createdAt: item.createdAt,
     libraryUrl: item.source === 'direct' ? `/v2/library/${item.id}` : `/v2/library/${item.id}`
+  };
+}
+
+function formatBrowseResult(item: any) {
+  return {
+    id: item.id,
+    source: item.source, // 'direct' or 'escrow'
+    title: item.title,
+    description: item.description,
+    category: item.category,
+    skills: parseSkills(item.skills),
+    license: item.license,
+    contributor: item.contributor,
+    accessCount: item.accessCount || 0,
+    citationCount: item.citationCount || 0,
+    createdAt: item.createdAt,
+    libraryUrl: `/v2/library/${item.id}`
   };
 }
 
