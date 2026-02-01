@@ -183,6 +183,9 @@ function initSchema() {
       category TEXT,
       license TEXT DEFAULT 'public-domain',
       source TEXT DEFAULT 'direct',
+      source_marketplace TEXT,
+      source_id TEXT,
+      source_url TEXT,
       escrow_id TEXT,
       access_count INTEGER DEFAULT 0,
       citation_count INTEGER DEFAULT 0,
@@ -682,6 +685,9 @@ export interface LibraryItemRow {
   category: string | null;
   license: string;
   source: string;
+  source_marketplace: string | null;
+  source_id: string | null;
+  source_url: string | null;
   escrow_id: string | null;
   access_count: number;
   citation_count: number;
@@ -698,6 +704,9 @@ export function createLibraryItem(item: {
   skills?: string[];
   category?: string;
   license?: string;
+  sourceMarketplace?: string;
+  sourceId?: string;
+  sourceUrl?: string;
 }): LibraryItemRow {
   const database = getDb();
   const id = `lib_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -709,12 +718,13 @@ export function createLibraryItem(item: {
   const deliverableHash = isSmall ? null : null; // Would upload to IPFS for large items
 
   const skillsJson = item.skills ? JSON.stringify(item.skills) : null;
+  const source = item.sourceMarketplace || 'direct';
 
   database.prepare(`
     INSERT INTO library_items (
       id, contributor, title, description, deliverable_inline, deliverable_hash,
-      skills, category, license, source, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'direct', ?)
+      skills, category, license, source, source_marketplace, source_id, source_url, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     item.contributor.toLowerCase(),
@@ -725,6 +735,10 @@ export function createLibraryItem(item: {
     skillsJson,
     item.category || 'other',
     item.license || 'public-domain',
+    source,
+    item.sourceMarketplace || null,
+    item.sourceId || null,
+    item.sourceUrl || null,
     now
   );
 

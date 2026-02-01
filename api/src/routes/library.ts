@@ -36,7 +36,7 @@ export const libraryRoutes = new Hono();
  */
 libraryRoutes.post('/publish', async (c) => {
   const body = await c.req.json();
-  const { from, title, description, deliverable, skills, category, license } = body;
+  const { from, title, description, deliverable, skills, category, license, source, source_id, source_url } = body;
 
   // Validate required fields
   if (!from) {
@@ -64,7 +64,10 @@ libraryRoutes.post('/publish', async (c) => {
     deliverable: deliverable,
     skills: Array.isArray(skills) ? skills : (skills ? [skills] : []),
     category: finalCategory,
-    license: license || 'public-domain'
+    license: license || 'public-domain',
+    sourceMarketplace: source,
+    sourceId: source_id,
+    sourceUrl: source_url
   });
 
   // Get updated reputation
