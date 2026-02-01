@@ -2,13 +2,14 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title AgentEscrow
  * @notice Settlement infrastructure for agent-to-agent commerce
  * @dev Phase 0: Protocol as sole arbitrator
  */
-contract AgentEscrow {
+contract AgentEscrow is ReentrancyGuard {
     // =============================================================
     //                           TYPES
     // =============================================================
@@ -112,23 +113,39 @@ contract AgentEscrow {
     // =============================================================
 
     modifier onlyArbitrator() {
-        if (msg.sender != arbitrator) revert OnlyArbitrator();
+        _checkArbitrator();
         _;
     }
 
     modifier onlyClient(bytes32 escrowId) {
-        if (msg.sender != escrows[escrowId].client) revert OnlyClient();
+        _checkClient(escrowId);
         _;
     }
 
     modifier onlyWorker(bytes32 escrowId) {
-        if (msg.sender != escrows[escrowId].worker) revert OnlyWorker();
+        _checkWorker(escrowId);
         _;
     }
 
     modifier inState(bytes32 escrowId, EscrowState expected) {
-        if (escrows[escrowId].state != expected) revert InvalidState();
+        _checkState(escrowId, expected);
         _;
+    }
+
+    function _checkArbitrator() internal view {
+        if (msg.sender != arbitrator) revert OnlyArbitrator();
+    }
+
+    function _checkClient(bytes32 escrowId) internal view {
+        if (msg.sender != escrows[escrowId].client) revert OnlyClient();
+    }
+
+    function _checkWorker(bytes32 escrowId) internal view {
+        if (msg.sender != escrows[escrowId].worker) revert OnlyWorker();
+    }
+
+    function _checkState(bytes32 escrowId, EscrowState expected) internal view {
+        if (escrows[escrowId].state != expected) revert InvalidState();
     }
 
     // =============================================================
@@ -165,7 +182,8 @@ contract AgentEscrow {
         if (token == address(0)) {
             if (msg.value != amount) revert InvalidAmount();
         } else {
-            IERC20(token).transferFrom(msg.sender, address(this), amount);
+            bool success = IERC20(token).transferFrom(msg.sender, address(this), amount);
+            if (!success) revert TransferFailed();
         }
 
         escrows[escrowId] = Escrow({
@@ -219,7 +237,7 @@ contract AgentEscrow {
     /**
      * @notice Client releases funds to worker (accepts delivery)
      */
-    function release(bytes32 escrowId) external onlyClient(escrowId) inState(escrowId, EscrowState.Submitted) {
+    function release(bytes32 escrowId) external nonReentrant onlyClient(escrowId) inState(escrowId, EscrowState.Submitted) {
         Escrow storage e = escrows[escrowId];
         
         uint256 protocolFee = (e.amount * protocolFeeBps) / 10000;
@@ -246,7 +264,8 @@ contract AgentEscrow {
         if (e.token == address(0)) {
             if (msg.value != disputeFee) revert InvalidAmount();
         } else {
-            IERC20(e.token).transferFrom(msg.sender, address(this), disputeFee);
+            bool success = IERC20(e.token).transferFrom(msg.sender, address(this), disputeFee);
+            if (!success) revert TransferFailed();
         }
 
         e.state = EscrowState.Disputed;
@@ -257,7 +276,7 @@ contract AgentEscrow {
     /**
      * @notice Auto-release if client doesn't respond within review period
      */
-    function autoRelease(bytes32 escrowId) external inState(escrowId, EscrowState.Submitted) {
+    function autoRelease(bytes32 escrowId) external nonReentrant inState(escrowId, EscrowState.Submitted) {
         Escrow storage e = escrows[escrowId];
         
         if (block.timestamp < e.submittedAt + clientReviewPeriod) revert ReviewPeriodActive();
@@ -286,7 +305,7 @@ contract AgentEscrow {
     function resolve(
         bytes32 escrowId,
         uint8 completionPct
-    ) external onlyArbitrator inState(escrowId, EscrowState.Disputed) {
+    ) external nonReentrant onlyArbitrator inState(escrowId, EscrowState.Disputed) {
         if (completionPct > 100) revert InvalidAmount();
         
         Escrow storage e = escrows[escrowId];
@@ -369,12 +388,13 @@ contract AgentEscrow {
 
     function _transfer(address token, address to, uint256 amount) internal {
         if (amount == 0) return;
-        
+
         if (token == address(0)) {
             (bool success,) = to.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
-            IERC20(token).transfer(to, amount);
+            bool success = IERC20(token).transfer(to, amount);
+            if (!success) revert TransferFailed();
         }
     }
 
