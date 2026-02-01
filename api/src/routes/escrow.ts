@@ -27,7 +27,7 @@ escrowRoutes.get('/:id', async (c) => {
 // Create new escrow
 escrowRoutes.post('/create', async (c) => {
   const body = await c.req.json();
-  const { privateKey, token, amount, deadline, criteriaHash } = body;
+  const { privateKey, token, amount, deadline, criteriaHash, reviewPeriod } = body;
 
   if (!privateKey || !token || !amount || !deadline || !criteriaHash) {
     return c.json(
@@ -42,7 +42,8 @@ escrowRoutes.post('/create', async (c) => {
       token as Hex,
       BigInt(amount),
       BigInt(deadline),
-      criteriaHash as Hex
+      criteriaHash as Hex,
+      BigInt(reviewPeriod || 0)
     );
 
     return c.json({

@@ -7,7 +7,7 @@ export const escrowRoutesV2 = new Hono();
 const contractAddress = process.env.ESCROW_CONTRACT_ADDRESS as Address;
 
 const escrowAbi = parseAbi([
-  'function createEscrow(address token, uint256 amount, uint256 deadline, bytes32 criteriaHash) payable returns (bytes32)',
+  'function createEscrow(address token, uint256 amount, uint256 deadline, bytes32 criteriaHash, uint256 reviewPeriod) payable returns (bytes32)',
   'function acceptEscrow(bytes32 escrowId)',
   'function submitWork(bytes32 escrowId, bytes32 evidenceHash)',
   'function release(bytes32 escrowId)',
@@ -19,13 +19,13 @@ const escrowAbi = parseAbi([
 function buildUnsignedTx(
   from: Address,
   functionName: string,
-  args: any[],
+  args: readonly unknown[],
   value?: bigint
 ) {
   const data = encodeFunctionData({
     abi: escrowAbi,
-    functionName,
-    args,
+    functionName: functionName as any,
+    args: args as any,
   });
 
   return {
@@ -52,7 +52,7 @@ escrowRoutesV2.get('/:id', async (c) => {
 // Create escrow - returns unsigned tx
 escrowRoutesV2.post('/create', async (c) => {
   const body = await c.req.json();
-  const { from, token, amount, deadline, criteriaHash } = body;
+  const { from, token, amount, deadline, criteriaHash, reviewPeriod } = body;
 
   if (!from || !token || !amount || !deadline || !criteriaHash) {
     return c.json(
@@ -63,11 +63,13 @@ escrowRoutesV2.post('/create', async (c) => {
 
   const isEth = token === '0x0000000000000000000000000000000000000000';
   const value = isEth ? BigInt(amount) : 0n;
+  // Default to 0 (use protocol default) if not specified
+  const effectiveReviewPeriod = reviewPeriod ? BigInt(reviewPeriod) : 0n;
 
   const unsignedTx = buildUnsignedTx(
     from as Address,
     'createEscrow',
-    [token, BigInt(amount), BigInt(deadline), criteriaHash],
+    [token, BigInt(amount), BigInt(deadline), criteriaHash, effectiveReviewPeriod],
     value
   );
 

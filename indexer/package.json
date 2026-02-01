@@ -1,0 +1,24 @@
+{
+  "name": "clawtasks-indexer",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "sync": "tsx src/index.ts sync",
+    "search": "tsx src/index.ts search",
+    "serve": "tsx src/index.ts serve",
+    "stats": "tsx src/index.ts stats"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.12.0",
+    "better-sqlite3": "^11.0.0",
+    "hono": "^4.0.0",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

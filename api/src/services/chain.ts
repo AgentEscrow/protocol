@@ -13,7 +13,7 @@ import { baseSepolia } from 'viem/chains';
 // Contract ABI (minimal for API interactions)
 const escrowAbi = parseAbi([
   // Read functions
-  'function getEscrow(bytes32 escrowId) view returns ((address client, address worker, address token, uint256 amount, uint256 deadline, bytes32 criteriaHash, uint8 state, uint8 outcome, uint8 completionPct, uint256 createdAt, uint256 submittedAt, bytes32 evidenceHash))',
+  'function getEscrow(bytes32 escrowId) view returns ((address client, address worker, address token, uint256 amount, uint256 deadline, bytes32 criteriaHash, uint8 state, uint8 outcome, uint8 completionPct, uint256 createdAt, uint256 submittedAt, bytes32 evidenceHash, uint256 reviewPeriod))',
   'function minEscrowAmount() view returns (uint256)',
   'function maxEscrowAmount() view returns (uint256)',
   'function protocolFeeBps() view returns (uint256)',
@@ -22,7 +22,7 @@ const escrowAbi = parseAbi([
   'function escrowCount() view returns (uint256)',
 
   // Write functions
-  'function createEscrow(address token, uint256 amount, uint256 deadline, bytes32 criteriaHash) payable returns (bytes32)',
+  'function createEscrow(address token, uint256 amount, uint256 deadline, bytes32 criteriaHash, uint256 reviewPeriod) payable returns (bytes32)',
   'function acceptEscrow(bytes32 escrowId)',
   'function submitWork(bytes32 escrowId, bytes32 evidenceHash)',
   'function release(bytes32 escrowId)',
@@ -74,6 +74,7 @@ export interface EscrowData {
   createdAt: number;
   submittedAt: number;
   evidenceHash: string | null;
+  reviewPeriod: number;
 }
 
 export async function getEscrow(escrowId: Hex): Promise<EscrowData> {
@@ -97,7 +98,8 @@ export async function getEscrow(escrowId: Hex): Promise<EscrowData> {
     createdAt,
     submittedAt,
     evidenceHash,
-  ] = result as [Address, Address, Address, bigint, bigint, Hex, number, number, number, bigint, bigint, Hex];
+    reviewPeriod,
+  ] = result as unknown as [Address, Address, Address, bigint, bigint, Hex, number, number, number, bigint, bigint, Hex, bigint];
 
   return {
     id: escrowId,
@@ -115,6 +117,7 @@ export async function getEscrow(escrowId: Hex): Promise<EscrowData> {
     evidenceHash: evidenceHash === '0x0000000000000000000000000000000000000000000000000000000000000000'
       ? null
       : evidenceHash,
+    reviewPeriod: Number(reviewPeriod),
   };
 }
 
@@ -170,7 +173,8 @@ export async function createEscrow(
   token: Address,
   amount: bigint,
   deadline: bigint,
-  criteriaHash: Hex
+  criteriaHash: Hex,
+  reviewPeriod: bigint = 0n
 ): Promise<{ escrowId: Hex; txHash: Hash }> {
   const walletClient = getWalletClient(privateKey);
 
@@ -180,7 +184,7 @@ export async function createEscrow(
     address: contractAddress,
     abi: escrowAbi,
     functionName: 'createEscrow',
-    args: [token, amount, deadline, criteriaHash],
+    args: [token, amount, deadline, criteriaHash, reviewPeriod],
     value: isEth ? amount : 0n,
   });
 

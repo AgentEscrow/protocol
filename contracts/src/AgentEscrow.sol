@@ -42,6 +42,7 @@ contract AgentEscrow is ReentrancyGuard {
         uint256 createdAt;
         uint256 submittedAt;
         bytes32 evidenceHash;   // IPFS hash of submitted evidence
+        uint256 reviewPeriod;   // Custom review period (0 = use default)
     }
 
     // =============================================================
@@ -63,6 +64,11 @@ contract AgentEscrow is ReentrancyGuard {
     uint256 public maxEscrowAmount = 5000e6; // $5000 in USDC
 
     uint256 public escrowCount;
+
+    // Referral tracking
+    mapping(address => address) public referrers;
+    address public airdropContract;
+    uint256 public referrerFeeBps = 500; // 5%
 
     // =============================================================
     //                          EVENTS
@@ -94,6 +100,9 @@ contract AgentEscrow is ReentrancyGuard {
 
     event ArbitratorTransferInitiated(address indexed newArbitrator);
     event ArbitratorTransferCompleted(address indexed newArbitrator);
+    event ReferrerPaid(bytes32 indexed escrowId, address indexed referrer, uint256 amount);
+    event AirdropContractSet(address indexed airdropContract);
+    event ReferrerSet(address indexed agent, address indexed referrer);
 
     // =============================================================
     //                          ERRORS
@@ -166,12 +175,14 @@ contract AgentEscrow is ReentrancyGuard {
      * @param amount Amount to escrow
      * @param deadline Unix timestamp for work completion
      * @param criteriaHash IPFS hash of success criteria JSON
+     * @param reviewPeriod Custom review period in seconds (0 = use protocol default)
      */
     function createEscrow(
         address token,
         uint256 amount,
         uint256 deadline,
-        bytes32 criteriaHash
+        bytes32 criteriaHash,
+        uint256 reviewPeriod
     ) external payable returns (bytes32 escrowId) {
         if (amount < minEscrowAmount || amount > maxEscrowAmount) revert InvalidAmount();
         if (deadline <= block.timestamp) revert DeadlinePassed();
@@ -198,7 +209,8 @@ contract AgentEscrow is ReentrancyGuard {
             completionPct: 0,
             createdAt: block.timestamp,
             submittedAt: 0,
-            evidenceHash: bytes32(0)
+            evidenceHash: bytes32(0),
+            reviewPeriod: reviewPeriod
         });
 
         emit EscrowCreated(escrowId, msg.sender, token, amount, criteriaHash);
@@ -239,9 +251,17 @@ contract AgentEscrow is ReentrancyGuard {
      */
     function release(bytes32 escrowId) external nonReentrant onlyClient(escrowId) inState(escrowId, EscrowState.Submitted) {
         Escrow storage e = escrows[escrowId];
-        
+
         uint256 protocolFee = (e.amount * protocolFeeBps) / 10000;
         uint256 workerAmount = e.amount - protocolFee;
+
+        // Pay referrer if exists
+        address referrer = referrers[e.worker];
+        uint256 referrerAmount = 0;
+        if (referrer != address(0) && referrerFeeBps > 0) {
+            referrerAmount = (workerAmount * referrerFeeBps) / 10000;
+            workerAmount -= referrerAmount;
+        }
 
         e.state = EscrowState.Resolved;
         e.outcome = Outcome.FullRelease;
@@ -249,6 +269,12 @@ contract AgentEscrow is ReentrancyGuard {
 
         _transfer(e.token, e.worker, workerAmount);
         _transfer(e.token, arbitrator, protocolFee); // Protocol fee to arbitrator (treasury)
+
+        // Transfer referrer cut
+        if (referrerAmount > 0) {
+            _transfer(e.token, referrer, referrerAmount);
+            emit ReferrerPaid(escrowId, referrer, referrerAmount);
+        }
 
         emit EscrowReleased(escrowId, workerAmount, protocolFee);
     }
@@ -278,11 +304,21 @@ contract AgentEscrow is ReentrancyGuard {
      */
     function autoRelease(bytes32 escrowId) external nonReentrant inState(escrowId, EscrowState.Submitted) {
         Escrow storage e = escrows[escrowId];
-        
-        if (block.timestamp < e.submittedAt + clientReviewPeriod) revert ReviewPeriodActive();
+
+        // Use per-escrow review period if set, otherwise use protocol default
+        uint256 effectiveReviewPeriod = e.reviewPeriod > 0 ? e.reviewPeriod : clientReviewPeriod;
+        if (block.timestamp < e.submittedAt + effectiveReviewPeriod) revert ReviewPeriodActive();
 
         uint256 protocolFee = (e.amount * protocolFeeBps) / 10000;
         uint256 workerAmount = e.amount - protocolFee;
+
+        // Pay referrer if exists
+        address referrer = referrers[e.worker];
+        uint256 referrerAmount = 0;
+        if (referrer != address(0) && referrerFeeBps > 0) {
+            referrerAmount = (workerAmount * referrerFeeBps) / 10000;
+            workerAmount -= referrerAmount;
+        }
 
         e.state = EscrowState.Resolved;
         e.outcome = Outcome.FullRelease;
@@ -290,6 +326,12 @@ contract AgentEscrow is ReentrancyGuard {
 
         _transfer(e.token, e.worker, workerAmount);
         _transfer(e.token, arbitrator, protocolFee);
+
+        // Transfer referrer cut
+        if (referrerAmount > 0) {
+            _transfer(e.token, referrer, referrerAmount);
+            emit ReferrerPaid(escrowId, referrer, referrerAmount);
+        }
 
         emit EscrowReleased(escrowId, workerAmount, protocolFee);
     }
@@ -307,14 +349,22 @@ contract AgentEscrow is ReentrancyGuard {
         uint8 completionPct
     ) external nonReentrant onlyArbitrator inState(escrowId, EscrowState.Disputed) {
         if (completionPct > 100) revert InvalidAmount();
-        
+
         Escrow storage e = escrows[escrowId];
 
         uint256 protocolFee = (e.amount * protocolFeeBps) / 10000;
         uint256 distributable = e.amount - protocolFee;
-        
+
         uint256 workerAmount = (distributable * completionPct) / 100;
         uint256 clientRefund = distributable - workerAmount;
+
+        // Pay referrer from worker's portion if exists
+        address referrer = referrers[e.worker];
+        uint256 referrerAmount = 0;
+        if (referrer != address(0) && referrerFeeBps > 0 && workerAmount > 0) {
+            referrerAmount = (workerAmount * referrerFeeBps) / 10000;
+            workerAmount -= referrerAmount;
+        }
 
         Outcome outcome;
         if (completionPct == 100) {
@@ -331,24 +381,66 @@ contract AgentEscrow is ReentrancyGuard {
 
         // Return dispute fee to winner (client if <50% completion, worker if >=50%)
         uint256 disputeFee = (e.amount * disputeFeeBps) / 10000;
-        
+
         if (workerAmount > 0) {
             _transfer(e.token, e.worker, workerAmount);
         }
         if (clientRefund > 0) {
             _transfer(e.token, e.client, clientRefund);
         }
-        
+
         // Dispute fee to winner
         if (completionPct >= 50) {
             _transfer(e.token, e.worker, disputeFee);
         } else {
             _transfer(e.token, e.client, disputeFee);
         }
-        
+
+        // Transfer referrer cut
+        if (referrerAmount > 0) {
+            _transfer(e.token, referrer, referrerAmount);
+            emit ReferrerPaid(escrowId, referrer, referrerAmount);
+        }
+
         _transfer(e.token, arbitrator, protocolFee);
 
         emit EscrowResolved(escrowId, outcome, completionPct, workerAmount, clientRefund);
+    }
+
+    // =============================================================
+    //                     REFERRAL SYSTEM
+    // =============================================================
+
+    /**
+     * @notice Set the airdrop contract address (only arbitrator)
+     */
+    function setAirdropContract(address _airdrop) external onlyArbitrator {
+        airdropContract = _airdrop;
+        emit AirdropContractSet(_airdrop);
+    }
+
+    /**
+     * @notice Set referrer for an agent (only callable by airdrop contract)
+     * @param agent The agent who was referred
+     * @param referrer The referring agent
+     */
+    function setReferrer(address agent, address referrer) external {
+        require(msg.sender == airdropContract, "Only airdrop contract");
+        require(referrer != address(0), "Invalid referrer");
+        require(agent != referrer, "Cannot self-refer");
+
+        // Only set if not already set
+        if (referrers[agent] == address(0)) {
+            referrers[agent] = referrer;
+            emit ReferrerSet(agent, referrer);
+        }
+    }
+
+    /**
+     * @notice Get referrer for an agent
+     */
+    function getReferrer(address agent) external view returns (address) {
+        return referrers[agent];
     }
 
     // =============================================================

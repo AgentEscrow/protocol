@@ -4,6 +4,9 @@ out = "out"
 libs = ["lib"]
 test = "test"
 solc = "0.8.20"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
 
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",

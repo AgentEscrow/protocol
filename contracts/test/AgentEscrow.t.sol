@@ -63,7 +63,8 @@ contract AgentEscrowTest is Test {
             address(usdc),
             100e6, // $100
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0 // Use default review period
         );
         
         AgentEscrow.Escrow memory e = escrow.getEscrow(escrowId);
@@ -78,7 +79,8 @@ contract AgentEscrowTest is Test {
             address(usdc),
             100e6,
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0 // Use default review period
         );
         
         vm.prank(worker);
@@ -95,7 +97,8 @@ contract AgentEscrowTest is Test {
             address(usdc),
             100e6,
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0 // Use default review period
         );
         
         vm.prank(worker);
@@ -115,7 +118,8 @@ contract AgentEscrowTest is Test {
             address(usdc),
             100e6,
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0 // Use default review period
         );
         
         vm.prank(worker);
@@ -143,7 +147,8 @@ contract AgentEscrowTest is Test {
             address(usdc),
             100e6,
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0 // Use default review period
         );
         
         vm.prank(worker);
@@ -191,7 +196,8 @@ contract AgentEscrowTest is Test {
             address(usdc),
             100e6,
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0 // Use default review period
         );
         
         vm.prank(worker);
@@ -219,7 +225,8 @@ contract AgentEscrowTest is Test {
             address(usdc),
             100e6,
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0 // Use default review period
         );
         
         vm.prank(worker);
@@ -241,7 +248,41 @@ contract AgentEscrowTest is Test {
             address(usdc),
             1e6, // $1 - below minimum
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0
         );
+    }
+
+    function test_CustomReviewPeriod() public {
+        // Create escrow with 1 hour custom review period
+        vm.prank(client);
+        bytes32 escrowId = escrow.createEscrow(
+            address(usdc),
+            100e6,
+            block.timestamp + 1 days,
+            criteriaHash,
+            1 hours // Custom 1 hour review period
+        );
+
+        vm.prank(worker);
+        escrow.acceptEscrow(escrowId);
+
+        vm.prank(worker);
+        escrow.submitWork(escrowId, evidenceHash);
+
+        // Try to auto-release after 30 minutes (should fail)
+        vm.warp(block.timestamp + 30 minutes);
+        vm.expectRevert(AgentEscrow.ReviewPeriodActive.selector);
+        escrow.autoRelease(escrowId);
+
+        // Fast forward to 1.5 hours (past custom review period)
+        vm.warp(block.timestamp + 1 hours);
+
+        uint256 workerBalanceBefore = usdc.balanceOf(worker);
+        escrow.autoRelease(escrowId);
+
+        AgentEscrow.Escrow memory e = escrow.getEscrow(escrowId);
+        assertEq(uint8(e.state), uint8(AgentEscrow.EscrowState.Resolved));
+        assertEq(usdc.balanceOf(worker) - workerBalanceBefore, 99e6);
     }
 }

@@ -151,7 +151,8 @@ contract AgentEscrowStressTest is Test {
             address(0), // ETH
             1 ether,
             block.timestamp + 1 days,
-            criteriaHash
+            criteriaHash,
+            0
         );
 
         // Attacker contract accepts
@@ -186,7 +187,7 @@ contract AgentEscrowStressTest is Test {
     function test_CannotAcceptTwice() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -201,7 +202,7 @@ contract AgentEscrowStressTest is Test {
     function test_CannotSubmitWithoutAccepting() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         // Worker is address(0) before acceptance, so OnlyWorker error fires first
@@ -213,7 +214,7 @@ contract AgentEscrowStressTest is Test {
     function test_CannotReleaseWithoutSubmission() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -227,7 +228,7 @@ contract AgentEscrowStressTest is Test {
     function test_CannotDisputeWithoutSubmission() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -241,7 +242,7 @@ contract AgentEscrowStressTest is Test {
     function test_CannotResolveWithoutDispute() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -258,7 +259,7 @@ contract AgentEscrowStressTest is Test {
     function test_CannotDoubleRelease() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -284,7 +285,7 @@ contract AgentEscrowStressTest is Test {
         // Just above minimum should work
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 10e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 10e6, block.timestamp + 1 days, criteriaHash, 0
         );
         assertNotEq(escrowId, bytes32(0));
     }
@@ -293,7 +294,7 @@ contract AgentEscrowStressTest is Test {
         // At maximum should work
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 5000e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 5000e6, block.timestamp + 1 days, criteriaHash, 0
         );
         assertNotEq(escrowId, bytes32(0));
     }
@@ -301,25 +302,25 @@ contract AgentEscrowStressTest is Test {
     function test_BelowMinimumReverts() public {
         vm.prank(client);
         vm.expectRevert(AgentEscrow.InvalidAmount.selector);
-        escrow.createEscrow(address(usdc), 9e6, block.timestamp + 1 days, criteriaHash);
+        escrow.createEscrow(address(usdc), 9e6, block.timestamp + 1 days, criteriaHash, 0);
     }
 
     function test_AboveMaximumReverts() public {
         vm.prank(client);
         vm.expectRevert(AgentEscrow.InvalidAmount.selector);
-        escrow.createEscrow(address(usdc), 5001e6, block.timestamp + 1 days, criteriaHash);
+        escrow.createEscrow(address(usdc), 5001e6, block.timestamp + 1 days, criteriaHash, 0);
     }
 
     function test_DeadlineInPastReverts() public {
         vm.prank(client);
         vm.expectRevert(AgentEscrow.DeadlinePassed.selector);
-        escrow.createEscrow(address(usdc), 100e6, block.timestamp - 1, criteriaHash);
+        escrow.createEscrow(address(usdc), 100e6, block.timestamp - 1, criteriaHash, 0);
     }
 
     function test_AcceptAfterDeadlineReverts() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 hours, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 hours, criteriaHash, 0
         );
 
         // Fast forward past deadline
@@ -337,7 +338,7 @@ contract AgentEscrowStressTest is Test {
     function test_ProtocolFeeCalculation() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -360,7 +361,7 @@ contract AgentEscrowStressTest is Test {
     function test_DisputeFeeCalculation() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -386,7 +387,7 @@ contract AgentEscrowStressTest is Test {
     function test_PartialResolution_50Percent() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -418,7 +419,7 @@ contract AgentEscrowStressTest is Test {
     function test_PartialResolution_0Percent() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -449,7 +450,7 @@ contract AgentEscrowStressTest is Test {
     function test_PartialResolution_100Percent() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -488,7 +489,7 @@ contract AgentEscrowStressTest is Test {
         // Create escrow (this should work)
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(malToken), 100e6, block.timestamp + 1 days, criteriaHash
+            address(malToken), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -521,7 +522,7 @@ contract AgentEscrowStressTest is Test {
         // Create with ETH
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow{value: 1 ether}(
-            address(0), 1 ether, block.timestamp + 1 days, criteriaHash
+            address(0), 1 ether, block.timestamp + 1 days, criteriaHash, 0
         );
 
         assertEq(client.balance, clientBalanceBefore - 1 ether);
@@ -547,7 +548,7 @@ contract AgentEscrowStressTest is Test {
         vm.prank(client);
         vm.expectRevert(AgentEscrow.InvalidAmount.selector);
         escrow.createEscrow{value: 0.5 ether}(
-            address(0), 1 ether, block.timestamp + 1 days, criteriaHash
+            address(0), 1 ether, block.timestamp + 1 days, criteriaHash, 0
         );
     }
 
@@ -558,7 +559,7 @@ contract AgentEscrowStressTest is Test {
     function test_OnlyClientCanRelease() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -581,7 +582,7 @@ contract AgentEscrowStressTest is Test {
     function test_OnlyWorkerCanSubmit() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -596,7 +597,7 @@ contract AgentEscrowStressTest is Test {
     function test_OnlyArbitratorCanResolve() public {
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -637,7 +638,7 @@ contract AgentEscrowStressTest is Test {
 
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), amount, block.timestamp + 1 days, criteriaHash
+            address(usdc), amount, block.timestamp + 1 days, criteriaHash, 0
         );
 
         AgentEscrow.Escrow memory e = escrow.getEscrow(escrowId);
@@ -650,7 +651,7 @@ contract AgentEscrowStressTest is Test {
 
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 1000e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -692,7 +693,7 @@ contract AgentEscrowStressTest is Test {
 
         vm.prank(client);
         bytes32 escrowId = escrow.createEscrow(
-            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+            address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
         );
 
         vm.prank(worker);
@@ -728,7 +729,7 @@ contract AgentEscrowStressTest is Test {
 
             vm.prank(client);
             escrowIds[i] = escrow.createEscrow(
-                address(usdc), 100e6, block.timestamp + 1 days, criteriaHash
+                address(usdc), 100e6, block.timestamp + 1 days, criteriaHash, 0
             );
         }
 

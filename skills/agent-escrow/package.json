@@ -1,0 +1,19 @@
+{
+  "name": "@agent-escrow/skill",
+  "version": "0.1.0",
+  "description": "Agent Escrow CLI skill for AI agents",
+  "type": "module",
+  "bin": {
+    "escrow": "./escrow.ts"
+  },
+  "scripts": {
+    "escrow": "tsx escrow.ts"
+  },
+  "dependencies": {
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
+  }
+}
